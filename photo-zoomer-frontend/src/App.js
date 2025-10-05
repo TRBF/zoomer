@@ -115,13 +115,16 @@ function App() {
   useEffect(() => {
     const centerX = Math.round(IMAGE_WIDTH / 2);
     const centerY = Math.round(IMAGE_HEIGHT / 2);
-    fetchImage(1, centerX, centerY).then(url => {
+    
+    // Fetch initial image
+    const init = async () => {
+      const url = await fetchImage(1, centerX, centerY);
       if (url) {
         setCurrentImage(url);
       }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run once on mount
+    };
+    init();
+  }, [fetchImage]); // Run when fetchImage is available
 
   // Keyboard controls
   useEffect(() => {
