@@ -4,55 +4,23 @@ import './App.css';
 
 const BACKEND_URL = 'http://localhost:8000';
 
-// Image dimensions from the NASA FITS file
-const IMAGE_WIDTH = 12200;  // Original image width
-const IMAGE_HEIGHT = 8600;   // Original image height
-const VIEWPORT_WIDTH = 1920;  // Display resolution
-const VIEWPORT_HEIGHT = 1080; // Display resolution
+// Full image dimensions from NASA FITS file
+const IMAGE_WIDTH = 12200;
+const IMAGE_HEIGHT = 8600;
 
 function App() {
   const [zoomLevel, setZoomLevel] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [imageCoords, setImageCoords] = useState({ x: 0, y: 0 }); // Actual image coordinates
   const [isDrawing, setIsDrawing] = useState(false);
   const [squareStart, setSquareStart] = useState(null);
   const [squareEnd, setSquareEnd] = useState(null);
   const [chatMessage, setChatMessage] = useState('');
   const [lastIntegerZoom, setLastIntegerZoom] = useState(1);
   const [currentImage, setCurrentImage] = useState(null);
-  const [nextImage, setNextImage] = useState(null);
   const [imageCache, setImageCache] = useState({});
   
   const canvasRef = useRef(null);
   const imageRef = useRef(null);
-
-  // Convert screen position to image coordinates
-  const getImageCoordinates = useCallback((screenPos, zoom) => {
-    // Calculate the center of the viewport in screen space
-    const viewportCenterX = window.innerWidth / 2;
-    const viewportCenterY = window.innerHeight / 2;
-    
-    // Calculate what point in the image is at the viewport center
-    // Starting from image center, adjusted by the pan position
-    const imageCenterX = IMAGE_WIDTH / 2;
-    const imageCenterY = IMAGE_HEIGHT / 2;
-    
-    // The offset from center due to panning (inverted because positive pan moves image right/down)
-    const offsetX = -screenPos.x / zoom;
-    const offsetY = -screenPos.y / zoom;
-    
-    // The actual image coordinates at the viewport center
-    const imageX = Math.max(0, Math.min(IMAGE_WIDTH, imageCenterX + offsetX));
-    const imageY = Math.max(0, Math.min(IMAGE_HEIGHT, imageCenterY + offsetY));
-    
-    return { x: Math.round(imageX), y: Math.round(imageY) };
-  }, []);
-
-  // Update image coordinates when position or zoom changes
-  useEffect(() => {
-    const coords = getImageCoordinates(position, zoomLevel);
-    setImageCoords(coords);
-  }, [position, zoomLevel, getImageCoordinates]);
 
   // Fetch image from backend for a specific zoom level
   const fetchImage = useCallback(async (zoom, x = 0, y = 0) => {
@@ -86,45 +54,35 @@ function App() {
   // Handle zoom level changes and detect integer steps
   useEffect(() => {
     const currentIntegerZoom = Math.floor(zoomLevel);
-    const nextIntegerZoom = Math.ceil(zoomLevel);
     
-    // Fetch new images when zoom level changes
-    if (currentIntegerZoom !== lastIntegerZoom) {
-      console.log(`🔄 Zoom level: ${currentIntegerZoom}, Position: (${imageCoords.x}, ${imageCoords.y})`);
+    if (currentIntegerZoom !== lastIntegerZoom && currentIntegerZoom >= 1) {
+      // Calculate x and y coordinates based on zoom level
+      const x = Math.round(IMAGE_WIDTH / currentIntegerZoom / 2);
+      const y = Math.round(IMAGE_HEIGHT / currentIntegerZoom / 3);
+      
+      console.log(`🔄 Zoom level: ${currentIntegerZoom}x, Fetching image at x=${x}, y=${y}`);
       setLastIntegerZoom(currentIntegerZoom);
       
-      // Fetch the current zoom level image with correct coordinates
-      fetchImage(currentIntegerZoom, imageCoords.x, imageCoords.y).then(url => {
+      // Fetch the current zoom level image with calculated coordinates
+      fetchImage(currentIntegerZoom, x, y).then(url => {
         if (url) {
           setCurrentImage(url);
         }
       });
-      
-      // Pre-fetch the next zoom level for smooth transition
-      if (nextIntegerZoom > currentIntegerZoom) {
-        fetchImage(nextIntegerZoom, imageCoords.x, imageCoords.y).then(url => {
-          if (url) {
-            setNextImage(url);
-          }
-        });
-      }
     }
-  }, [zoomLevel, lastIntegerZoom, imageCoords, fetchImage]);
+  }, [zoomLevel, lastIntegerZoom, fetchImage]);
 
-  // Initialize with first image at center
+  // Initialize with first image
   useEffect(() => {
-    const centerX = Math.round(IMAGE_WIDTH / 2);
-    const centerY = Math.round(IMAGE_HEIGHT / 2);
+    const x = Math.round(IMAGE_WIDTH / 1 / 2);
+    const y = Math.round(IMAGE_HEIGHT / 1 / 3);
     
-    // Fetch initial image
-    const init = async () => {
-      const url = await fetchImage(1, centerX, centerY);
+    fetchImage(1, x, y).then(url => {
       if (url) {
         setCurrentImage(url);
       }
-    };
-    init();
-  }, [fetchImage]); // Run when fetchImage is available
+    });
+  }, [fetchImage]);
 
   // Keyboard controls
   useEffect(() => {
@@ -314,34 +272,16 @@ function App() {
             }}
           >
             {currentImage && (
-              <>
-                <img
-                  ref={imageRef}
-                  src={currentImage}
-                  alt="Zoomable image"
-                  className="main-image"
-                  draggable={false}
-                  style={{
-                    opacity: 1,
-                    transformOrigin: 'top left'
-                  }}
-                />
-                {nextImage && zoomLevel > lastIntegerZoom && (
-                  <img
-                    src={nextImage}
-                    alt="Next zoom level"
-                    className="main-image"
-                    draggable={false}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      opacity: zoomLevel - lastIntegerZoom, // Smooth fade between zoom levels
-                      transformOrigin: 'top left'
-                    }}
-                  />
-                )}
-              </>
+              <img
+                ref={imageRef}
+                src={currentImage}
+                alt="Zoomable image"
+                className="main-image"
+                draggable={false}
+                style={{
+                  transformOrigin: 'top left'
+                }}
+              />
             )}
             <canvas
               ref={canvasRef}
@@ -371,10 +311,8 @@ function App() {
 
           <div className="position-info">
             <h3>Position</h3>
-            <p>Screen X: {position.x.toFixed(0)}px</p>
-            <p>Screen Y: {position.y.toFixed(0)}px</p>
-            <p>Image X: {imageCoords.x}</p>
-            <p>Image Y: {imageCoords.y}</p>
+            <p>X: {position.x.toFixed(0)}px</p>
+            <p>Y: {position.y.toFixed(0)}px</p>
           </div>
 
           <div className="chat-section">
