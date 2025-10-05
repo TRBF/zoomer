@@ -3,6 +3,14 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 import os
 import json
+from io import BytesIO
+from interface import get_stitched_image
+
+# Image dimensions from FITS file
+IMAGE_WIDTH = 12200
+IMAGE_HEIGHT = 8600
+W_RESOLUTION = 1920
+H_RESOLUTION = 1080
 
 class ImageServer(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -23,23 +31,46 @@ class ImageServer(BaseHTTPRequestHandler):
                 x = int(query_params.get('x', [0])[0])
                 y = int(query_params.get('y', [0])[0])
                 
-                # Construct the filename based on the naming pattern from nasa.py
-                # Pattern: test_compression_level_{zoom}_x_{x}_y_{y}.jpg
-                filename = f'assets/test_compression_level_{zoom}_x_{x}_y_{y}.jpg'
-                
-                if os.path.exists(filename):
+                if zoom == 1:
+                    # For 1x zoom, serve the pre-generated static file directly
+                    filename = f'assets/test_compression_level_1_x_0_y_0.jpg'
+                    if os.path.exists(filename):
+                        with open(filename, 'rb') as f:
+                            img_bytes = f.read()
+                        
+                        self.send_header('Content-Type', 'image/jpeg')
+                        self.send_header('Content-Length', str(len(img_bytes)))
+                        self.end_headers()
+                        self.wfile.write(img_bytes)
+                    else:
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        response = {'error': f'1x image not found: {filename}'}
+                        self.wfile.write(json.dumps(response).encode())
+                else:
+                    # For zoom > 1x, use get_stitched_image to dynamically stitch tiles
+                    # This allows for arbitrary x,y positions based on panning
+                    img = get_stitched_image(
+                        x=x,
+                        y=y,
+                        zoom_level=zoom,
+                        w_resolution=W_RESOLUTION,
+                        h_resolution=H_RESOLUTION,
+                        w_img=IMAGE_WIDTH,
+                        h_img=IMAGE_HEIGHT
+                    )
+                    
+                    # Convert PIL Image to JPEG bytes
+                    buf = BytesIO()
+                    img.save(buf, format='JPEG', quality=95)
+                    img_bytes = buf.getvalue()
+                    
                     # Serve the image
                     self.send_header('Content-Type', 'image/jpeg')
+                    self.send_header('Content-Length', str(len(img_bytes)))
                     self.end_headers()
-                    
-                    with open(filename, 'rb') as f:
-                        self.wfile.write(f.read())
-                else:
-                    # Image not found
-                    self.send_header('Content-Type', 'application/json')
-                    self.end_headers()
-                    response = {'error': f'Image not found: {filename}'}
-                    self.wfile.write(json.dumps(response).encode())
+                    self.wfile.write(img_bytes)
+                
             except Exception as e:
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
