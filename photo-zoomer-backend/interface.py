@@ -37,7 +37,7 @@ def get_stitched_image(x: int, y: int, zoom_level: float, w_resolution: int, h_r
   x_offset = x-x_tl
   y_offset = y-y_tl
 
-  cropped_img = stitched_img.crop((x_offset, y_offset, x_offset + w_unit, y_offset + h_unit))
+  cropped_img = stitched_img.crop((w_unit/2, h_unit/2, w_unit/2 + w_unit, h_unit/2 + h_unit))
   cropped_img = cropped_img.resize((w_resolution, h_resolution))
 
   return cropped_img
