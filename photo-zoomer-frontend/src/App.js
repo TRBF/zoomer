@@ -2,6 +2,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import './App.css';
 
+const BACKEND_URL = 'http://localhost:8000';
+
 function App() {
   const [zoomLevel, setZoomLevel] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -10,27 +12,77 @@ function App() {
   const [squareEnd, setSquareEnd] = useState(null);
   const [chatMessage, setChatMessage] = useState('');
   const [lastIntegerZoom, setLastIntegerZoom] = useState(1);
+  const [currentImage, setCurrentImage] = useState(null);
+  const [nextImage, setNextImage] = useState(null);
+  const [imageCache, setImageCache] = useState({});
   
   const canvasRef = useRef(null);
   const imageRef = useRef(null);
 
-  // Sample image URL - replace with your actual image
-  const imageUrl = 'https://picsum.photos/2000/2000';
-
-  // Set CSS custom property for background image
-  useEffect(() => {
-    document.documentElement.style.setProperty('--background-image-url', `url('${imageUrl}')`);
-  }, [imageUrl]);
+  // Fetch image from backend for a specific zoom level
+  const fetchImage = useCallback(async (zoom, x = 0, y = 0) => {
+    const cacheKey = `${zoom}_${x}_${y}`;
+    
+    // Check cache first
+    if (imageCache[cacheKey]) {
+      return imageCache[cacheKey];
+    }
+    
+    try {
+      const response = await fetch(`${BACKEND_URL}/image?zoom=${zoom}&x=${x}&y=${y}`);
+      if (response.ok) {
+        const blob = await response.blob();
+        const imageUrl = URL.createObjectURL(blob);
+        
+        // Update cache
+        setImageCache(prev => ({ ...prev, [cacheKey]: imageUrl }));
+        
+        return imageUrl;
+      } else {
+        console.error(`Failed to fetch image for zoom=${zoom}, x=${x}, y=${y}`);
+        return null;
+      }
+    } catch (error) {
+      console.error('Error fetching image:', error);
+      return null;
+    }
+  }, [imageCache]);
 
   // Handle zoom level changes and detect integer steps
   useEffect(() => {
     const currentIntegerZoom = Math.floor(zoomLevel);
+    const nextIntegerZoom = Math.ceil(zoomLevel);
+    
     if (currentIntegerZoom !== lastIntegerZoom) {
       console.log(`🔄 Zoom level changed to integer step: ${currentIntegerZoom}`);
-      console.log(`📡 Would send GET request to backend for zoom level: ${currentIntegerZoom}`);
       setLastIntegerZoom(currentIntegerZoom);
+      
+      // Fetch the current zoom level image
+      fetchImage(currentIntegerZoom).then(url => {
+        if (url) {
+          setCurrentImage(url);
+        }
+      });
+      
+      // Pre-fetch the next zoom level for smooth transition
+      if (nextIntegerZoom > currentIntegerZoom) {
+        fetchImage(nextIntegerZoom).then(url => {
+          if (url) {
+            setNextImage(url);
+          }
+        });
+      }
     }
-  }, [zoomLevel, lastIntegerZoom]);
+  }, [zoomLevel, lastIntegerZoom, fetchImage]);
+
+  // Initialize with first image
+  useEffect(() => {
+    fetchImage(1).then(url => {
+      if (url) {
+        setCurrentImage(url);
+      }
+    });
+  }, [fetchImage]);
 
   // Keyboard controls
   useEffect(() => {
@@ -60,7 +112,7 @@ function App() {
           break;
         case '-':
           e.preventDefault();
-          setZoomLevel(prev => Math.max(prev - step, 0.1));
+          setZoomLevel(prev => Math.max(prev - step, 1)); // Don't allow zoom below 1x
           break;
         default:
           break;
@@ -75,7 +127,7 @@ function App() {
   const handleWheel = useCallback((e) => {
     e.preventDefault();
     const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    setZoomLevel(prev => Math.max(0.1, Math.min(10, prev + delta)));
+    setZoomLevel(prev => Math.max(1, Math.min(10, prev + delta))); // Don't allow zoom below 1x
   }, []);
 
   // Mouse drag for panning
@@ -219,13 +271,36 @@ function App() {
               cursor: isDragging ? 'grabbing' : 'grab'
             }}
           >
-            <img
-              ref={imageRef}
-              src={imageUrl}
-              alt="Zoomable image"
-              className="main-image"
-              draggable={false}
-            />
+            {currentImage && (
+              <>
+                <img
+                  ref={imageRef}
+                  src={currentImage}
+                  alt="Zoomable image"
+                  className="main-image"
+                  draggable={false}
+                  style={{
+                    opacity: 1,
+                    transformOrigin: 'top left'
+                  }}
+                />
+                {nextImage && zoomLevel > lastIntegerZoom && (
+                  <img
+                    src={nextImage}
+                    alt="Next zoom level"
+                    className="main-image"
+                    draggable={false}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      opacity: zoomLevel - lastIntegerZoom, // Smooth fade between zoom levels
+                      transformOrigin: 'top left'
+                    }}
+                  />
+                )}
+              </>
+            )}
             <canvas
               ref={canvasRef}
               className="drawing-canvas"
@@ -243,7 +318,7 @@ function App() {
             <h3>Zoom Level</h3>
             <p>{zoomLevel.toFixed(2)}x</p>
             <div className="zoom-controls">
-              <button onClick={() => setZoomLevel(prev => Math.max(0.1, prev - 0.1))}>
+              <button onClick={() => setZoomLevel(prev => Math.max(1, prev - 0.1))}>
                 -
               </button>
               <button onClick={() => setZoomLevel(prev => Math.min(10, prev + 0.1))}>
