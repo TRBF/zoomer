@@ -15,19 +15,30 @@ function App() {
   const imageRef = useRef(null);
 
   // Sample image URL - replace with your actual image
-  const imageUrl = 'https://picsum.photos/2000/2000';
+  const imageUrl = 'http://localhost:8000/tile?zoom=1&x=0&y=0&w=2000&h=2000';
 
   // Set CSS custom property for background image
   useEffect(() => {
     document.documentElement.style.setProperty('--background-image-url', `url('${imageUrl}')`);
   }, [imageUrl]);
 
+  const [tileUrl, setTileUrl] = useState(imageUrl);
+
   // Handle zoom level changes and detect integer steps
   useEffect(() => {
-    const currentIntegerZoom = Math.floor(zoomLevel);
+    const currentIntegerZoom = Math.max(1, Math.floor(zoomLevel));
     if (currentIntegerZoom !== lastIntegerZoom) {
-      console.log(`🔄 Zoom level changed to integer step: ${currentIntegerZoom}`);
-      console.log(`📡 Would send GET request to backend for zoom level: ${currentIntegerZoom}`);
+      const viewportW = 2000;
+      const viewportH = 2000;
+
+      // Convert current CSS transform translate (position) and scale (zoom) into
+      // top-left image coordinates assuming tiles are top-left anchored.
+      const invScale = 1 / zoomLevel;
+      const imgX = Math.max(0, Math.floor(-position.x * invScale));
+      const imgY = Math.max(0, Math.floor(-position.y * invScale));
+
+      const url = `http://localhost:8000/tile?zoom=${currentIntegerZoom}&x=${imgX}&y=${imgY}&w=${viewportW}&h=${viewportH}&_=${Date.now()}`;
+      setTileUrl(url);
       setLastIntegerZoom(currentIntegerZoom);
     }
   }, [zoomLevel, lastIntegerZoom]);
@@ -56,11 +67,11 @@ function App() {
         case '+':
         case '=':
           e.preventDefault();
-          setZoomLevel(prev => Math.min(prev + step, 10));
+          setZoomLevel(prev => Math.min(Math.max(1, prev + step), 10));
           break;
         case '-':
           e.preventDefault();
-          setZoomLevel(prev => Math.max(prev - step, 0.1));
+          setZoomLevel(prev => Math.max(1, prev - step));
           break;
         default:
           break;
@@ -75,7 +86,7 @@ function App() {
   const handleWheel = useCallback((e) => {
     e.preventDefault();
     const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    setZoomLevel(prev => Math.max(0.1, Math.min(10, prev + delta)));
+    setZoomLevel(prev => Math.max(1, Math.min(10, prev + delta)));
   }, []);
 
   // Mouse drag for panning
@@ -221,7 +232,7 @@ function App() {
           >
             <img
               ref={imageRef}
-              src={imageUrl}
+              src={tileUrl}
               alt="Zoomable image"
               className="main-image"
               draggable={false}
